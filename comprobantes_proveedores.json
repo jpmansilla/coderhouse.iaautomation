@@ -1,0 +1,972 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -608,
+        0
+      ],
+      "id": "4db243ca-6b06-426d-a953-0d7b31b5bd51",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "j4xneXjuClKeUVfL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f7ce4da6-841f-49f0-96cd-d6a9705b2009",
+              "leftValue": "={{ $binary.attachment_0.mimeType }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -416,
+        0
+      ],
+      "id": "47a1aaa8-c1e6-4e95-9932-7c5939695284",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "errorMessage": "El adjunto no es una factura"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        112
+      ],
+      "id": "cff46dc3-09a6-445e-b99f-95491e490827",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c87a6159-5e8d-401d-833e-12bb21cf34b8",
+              "name": "pdf_base64",
+              "value": "={{ $json.pdf_base64 }}",
+              "type": "string"
+            },
+            {
+              "id": "1d3861e0-f5b8-4815-bfed-b50e42711d0b",
+              "name": "prompt_clasificador",
+              "value": "¿Este documento es una factura o comprobante fiscal argentino (AFIP/ARCA)? Respondé SOLO con JSON válido, sin markdown: {'es_factura': true} o {'es_factura': false}",
+              "type": "string"
+            },
+            {
+              "id": "d56bcd42-6c5e-43be-bfeb-9f04a177c47c",
+              "name": "prompt_extraccion",
+              "value": "Analizá este comprobante fiscal argentino y extraé TODOS los datos disponibles en el siguiente esquema JSON. Completá todos los campos que puedas identificar.  En el caso que el emisor de la factura sea ADIDAS ARGENTINA SA, al final del documento vas a encontrar una cadena con el formato 'SAP document number: AAAAAAAAAA / BBBBBBBBBB'. Para esos casos, en el campo 'concepto' del bloque comprobante devolver el valor AAAAAAAAAA.  {   'emisor': {     'razon_social': '', 'cuit': '', 'domicilio': '', 'localidad': '', 'provincia': '',     'condicion_iva': '', 'ingresos_brutos': '', 'inicio_actividades': '',     'telefono': '', 'email': ''   },   'comprobante': {     'tipo_comprobante': '', 'letra_comprobante': '', 'punto_venta': '',     'numero_comprobante': '', 'fecha_emision': '', 'fecha_vencimiento_pago': '',     'moneda': '', 'tipo_cambio': null, 'cae': '', 'fecha_vencimiento_cae': '',     'concepto': '', 'periodo_desde': '', 'periodo_hasta': ''   },   'receptor': {     'razon_social': '', 'cuit': '', 'domicilio': '', 'localidad': '', 'provincia': '',     'condicion_iva': '', 'condicion_venta': '', 'numero_referencia': ''   },   'detalle_items': [     {       'numero_linea': 1, 'codigo_producto': '', 'descripcion': '', 'cantidad': null,       'unidad_medida': '', 'precio_unitario': null, 'descuento_porcentaje': null,       'descuento_monto': null, 'alicuota_iva_porcentaje': null,       'subtotal_sin_iva': null, 'subtotal_con_iva': null     }   ],   'detalle_impuestos': [     {       'tipo_impuesto': '', 'descripcion': '', 'base_imponible': null,       'alicuota_porcentaje': null, 'monto_impuesto': null     }   ],   'totales': {     'subtotal_neto': null, 'total_descuentos': null, 'total_otros_tributos': null,     'total_iva': null, 'total_comprobante': null, 'cantidad_lineas_detalle': null   } }  REGLAS DE FORMATO: - Fechas: YYYY-MM-DD (ej: 2024-03-15) - Números: punto decimal, sin separador de miles (ej: 12500.50) - CUIT: solo dígitos, sin guiones (ej: 20123456789) - Campos no encontrados: null para numéricos, '' para texto - tipo_comprobante: FACTURA | NOTA DE CREDITO | NOTA DE DEBITO | RECIBO - letra_comprobante: A | B | C | E | M - concepto: PRODUCTOS | SERVICIOS | PRODUCTOS Y SERVICIOS  REGLAS PARA DOCUMENTOS MULTI-PAGINA Y DETALLE EXTENSO (CRITICO): - El documento puede tener varias páginas. Procesá TODAS las páginas de principio a fin. - En facturas de Adidas Argentina, cada página muestra al pie un valor 'Transporte:' que es un SUBTOTAL ACUMULADO de arrastre, NO el cierre del detalle. Ignoralo: seguí leyendo en la página siguiente. - El detalle termina UNICAMENTE cuando aparecen los bloques 'IMPORTE NETO', 'NETO GRAVADO', 'IVA' y 'TOTAL PESOS'. Recién ahí dejás de agregar items. - Es NORMAL que el mismo código de producto (ej: KE3566, KE0202) aparezca varias veces con distintos talles o números de despacho. CADA APARICION ES UNA LINEA INDEPENDIENTE: NO consolides, NO deduplices, NO agrupes. Un objeto en detalle_items por cada fila visible. - Cada línea puede tener varios 'Nro despacho:' debajo; pertenecen a UNA sola línea (no la dividas). - Antes de cerrar el JSON, verificá: la suma de (cantidad x precio_unitario x (1 - descuento/100)) de todos los items debe aproximarse al 'IMPORTE NETO' del pie. Si la diferencia es grande, probablemente omitiste líneas: revisá. - La línea 'Flete' (código 51670003 u otros) también es un item del detalle.  NUMERACION DE LINEAS: - numero_linea secuencial empezando en 1, sin saltos, en el orden en que aparecen de la primera a la última página.  Respondé UNICAMENTE con el objeto JSON, sin markdown ni explicaciones.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -32,
+        -64
+      ],
+      "id": "96ad200f-271c-48c6-9fef-f1a130cc9770",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "AIzaSyCUNRABZ9l4n-_jGXhjO3m7UQA5WIc-rYI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        { \"text\": \"{{ $json.prompt_clasificador }}\" },\n        { \"inline_data\": { \"mime_type\": \"application/pdf\", \"data\": \"{{ $json.pdf_base64 }}\" } }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n  \"response_mime_type\": \"application/json\",\n  \"response_schema\": {\n    \"type\": \"object\",\n    \"properties\": { \"es_factura\": { \"type\": \"boolean\" } },\n    \"required\": [\"es_factura\"]\n  },\n  \"thinkingConfig\": { \"thinkingBudget\": 0 }\n}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        240,
+        -96
+      ],
+      "id": "b24a2d72-c46d-4e47-b252-11b0530ec065",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "binaryPropertyName": "=attachment_0",
+        "destinationKey": "pdf_base64",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -224,
+        -64
+      ],
+      "id": "5b006dfe-d6d5-43f7-b6f5-40e87ed01ee3",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "let t = $json.candidates[0].content.parts[0].text.trim();\n\n// quitar fences de markdown por si aparecen\nif (t.startsWith(\"```\")) t = t.replace(/^```(json)?/, \"\").replace(/```$/, \"\").trim();\n\nlet obj;\ntry {\n  obj = JSON.parse(t);\n} catch (e) {\n  // fallback: cortar en el primer objeto JSON balanceado\n  let depth = 0, start = t.indexOf('{'), end = -1;\n  for (let i = start; i < t.length; i++) {\n    if (t[i] === '{') depth++;\n    else if (t[i] === '}') { depth--; if (depth === 0) { end = i; break; } }\n  }\n  obj = JSON.parse(t.slice(start, end + 1));\n}\n\nreturn [{ json: obj }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -96
+      ],
+      "id": "7bc2c201-3f69-4034-9390-499b8be07e80",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "AIzaSyCUNRABZ9l4n-_jGXhjO3m7UQA5WIc-rYI"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        { \"text\": \"{{ $('Edit Fields').item.json.prompt_extraccion }}\" },\n        { \"inline_data\": { \"mime_type\": \"application/pdf\", \"data\": \"{{ $('Edit Fields').item.json.pdf_base64 }}\" } }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n  \"response_mime_type\": \"application/json\",\n\"maxOutputTokens\": 60000,\n  \"thinkingConfig\": { \"thinkingBudget\": 0 },\n  \"response_schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"emisor\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"razon_social\": { \"type\": \"string\" },\n          \"cuit\": { \"type\": \"string\" },\n          \"domicilio\": { \"type\": \"string\" },\n          \"localidad\": { \"type\": \"string\" },\n          \"provincia\": { \"type\": \"string\" },\n          \"condicion_iva\": { \"type\": \"string\" },\n          \"ingresos_brutos\": { \"type\": \"string\" },\n          \"inicio_actividades\": { \"type\": \"string\" },\n          \"telefono\": { \"type\": \"string\" },\n          \"email\": { \"type\": \"string\" }\n        }\n      },\n      \"comprobante\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"tipo_comprobante\": { \"type\": \"string\" },\n          \"letra_comprobante\": { \"type\": \"string\" },\n          \"punto_venta\": { \"type\": \"string\" },\n          \"numero_comprobante\": { \"type\": \"string\" },\n          \"fecha_emision\": { \"type\": \"string\" },\n          \"fecha_vencimiento_pago\": { \"type\": \"string\" },\n          \"moneda\": { \"type\": \"string\" },\n          \"tipo_cambio\": { \"type\": \"number\", \"nullable\": true },\n          \"cae\": { \"type\": \"string\" },\n          \"fecha_vencimiento_cae\": { \"type\": \"string\" },\n          \"concepto\": { \"type\": \"string\" },\n          \"periodo_desde\": { \"type\": \"string\" },\n          \"periodo_hasta\": { \"type\": \"string\" }\n        }\n      },\n      \"receptor\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"razon_social\": { \"type\": \"string\" },\n          \"cuit\": { \"type\": \"string\" },\n          \"domicilio\": { \"type\": \"string\" },\n          \"localidad\": { \"type\": \"string\" },\n          \"provincia\": { \"type\": \"string\" },\n          \"condicion_iva\": { \"type\": \"string\" },\n          \"condicion_venta\": { \"type\": \"string\" },\n          \"numero_referencia\": { \"type\": \"string\" }\n        }\n      },\n      \"detalle_items\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"numero_linea\": { \"type\": \"integer\" },\n            \"codigo_producto\": { \"type\": \"string\" },\n            \"descripcion\": { \"type\": \"string\" },\n            \"cantidad\": { \"type\": \"number\", \"nullable\": true },\n            \"unidad_medida\": { \"type\": \"string\" },\n            \"precio_unitario\": { \"type\": \"number\", \"nullable\": true },\n            \"descuento_porcentaje\": { \"type\": \"number\", \"nullable\": true },\n            \"descuento_monto\": { \"type\": \"number\", \"nullable\": true },\n            \"alicuota_iva_porcentaje\": { \"type\": \"number\", \"nullable\": true },\n            \"subtotal_sin_iva\": { \"type\": \"number\", \"nullable\": true },\n            \"subtotal_con_iva\": { \"type\": \"number\", \"nullable\": true }\n          }\n        }\n      },\n      \"detalle_impuestos\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"tipo_impuesto\": { \"type\": \"string\" },\n            \"descripcion\": { \"type\": \"string\" },\n            \"base_imponible\": { \"type\": \"number\", \"nullable\": true },\n            \"alicuota_porcentaje\": { \"type\": \"number\", \"nullable\": true },\n            \"monto_impuesto\": { \"type\": \"number\", \"nullable\": true }\n          }\n        }\n      },\n      \"totales\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"subtotal_neto\": { \"type\": \"number\", \"nullable\": true },\n          \"total_descuentos\": { \"type\": \"number\", \"nullable\": true },\n          \"total_otros_tributos\": { \"type\": \"number\", \"nullable\": true },\n          \"total_iva\": { \"type\": \"number\", \"nullable\": true },\n          \"total_comprobante\": { \"type\": \"number\", \"nullable\": true },\n          \"cantidad_lineas_detalle\": { \"type\": \"integer\", \"nullable\": true }\n        }\n      }\n    }\n  }\n}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        656,
+        -96
+      ],
+      "id": "008be5f9-1a63-4f71-87d6-70b61ef64230",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "let t = $json.candidates[0].content.parts[0].text.trim();\nif (t.startsWith(\"```\")) t = t.replace(/^```(json)?/, \"\").replace(/```$/, \"\").trim();\nconst f = JSON.parse(t);\n\nconst id_factura = [\n  f.emisor?.cuit || \"\",\n  f.comprobante?.tipo_comprobante || \"\",\n  f.comprobante?.punto_venta || \"\",\n  f.comprobante?.numero_comprobante || \"\"\n].join(\"-\");\n\nreturn [{ json: { ...f, id_factura } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -96
+      ],
+      "id": "90cc90cf-9bcc-4a5c-abb1-52e4992cbddf",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM",
+          "mode": "list",
+          "cachedResultName": "Comprobantes Proveedores",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Comprobantes",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_factura": "={{ $json.id_factura }}",
+            "emisor_razon_social": "={{ $json.emisor.razon_social }}",
+            "emisor_cuit": "={{ $json.emisor.cuit }}",
+            "tipo_comprobante": "={{ $json.comprobante.tipo_comprobante }}",
+            "letra": "={{ $json.comprobante.letra_comprobante }}",
+            "punto_venta": "={{ $json.comprobante.punto_venta }}",
+            "numero": "={{ $json.comprobante.numero_comprobante }}",
+            "fecha_emision": "={{ $json.comprobante.fecha_emision }}",
+            "cae": "={{ $json.comprobante.cae }}",
+            "concepto": "={{ $json.comprobante.concepto }}",
+            "receptor_razon_social": "={{ $json.receptor.razon_social }}",
+            "receptor_cuit": "={{ $json.receptor.cuit }}",
+            "subtotal_neto": "={{ $json.totales.subtotal_neto }}",
+            "total_iva": "={{ $json.totales.total_iva }}",
+            "total_comprobante": "={{ $json.totales.total_comprobante }}",
+            "fecha_proceso": "={{ $today }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_factura",
+              "displayName": "id_factura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "emisor_razon_social",
+              "displayName": "emisor_razon_social",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "emisor_cuit",
+              "displayName": "emisor_cuit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_comprobante",
+              "displayName": "tipo_comprobante",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "letra",
+              "displayName": "letra",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "punto_venta",
+              "displayName": "punto_venta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "numero",
+              "displayName": "numero",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_emision",
+              "displayName": "fecha_emision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cae",
+              "displayName": "cae",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "concepto",
+              "displayName": "concepto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "receptor_razon_social",
+              "displayName": "receptor_razon_social",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "receptor_cuit",
+              "displayName": "receptor_cuit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal_neto",
+              "displayName": "subtotal_neto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_iva",
+              "displayName": "total_iva",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_comprobante",
+              "displayName": "total_comprobante",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_proceso",
+              "displayName": "fecha_proceso",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1056,
+        -96
+      ],
+      "id": "c512e818-b857-4b43-a28b-d61c9555b28a",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wArTf1rSqK6q9J4q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "detalle_items",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "id_factura",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        96
+      ],
+      "id": "82df28fd-8a64-4469-81a1-ac8fdc473c95",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM",
+          "mode": "list",
+          "cachedResultName": "Comprobantes Proveedores",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1435343989,
+          "mode": "list",
+          "cachedResultName": "Comprobantes_Items",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit#gid=1435343989"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_factura": "={{ $json.id_factura }}",
+            "codigo_producto": "={{ $json.detalle_items.codigo_producto }}",
+            "numero_linea": "={{ $json.detalle_items.numero_linea }}",
+            "descripcion": "={{ $json.detalle_items.descripcion }}",
+            "unidad_medida": "={{ $json.detalle_items.unidad_medida }}",
+            "cantidad": "={{ $json.detalle_items.cantidad }}",
+            "precio_unitario": "={{ $json.detalle_items.precio_unitario }}",
+            "descuento_porcentaje": "={{ $json.detalle_items.descuento_porcentaje }}",
+            "subtotal_sin_iva": "={{ $json.detalle_items.subtotal_sin_iva }}",
+            "subtotal_con_iva": "={{ $json.detalle_items.subtotal_con_iva }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_factura",
+              "displayName": "id_factura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "numero_linea",
+              "displayName": "numero_linea",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "codigo_producto",
+              "displayName": "codigo_producto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "descripcion",
+              "displayName": "descripcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "cantidad",
+              "displayName": "cantidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "unidad_medida",
+              "displayName": "unidad_medida",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "precio_unitario",
+              "displayName": "precio_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "descuento_porcentaje",
+              "displayName": "descuento_porcentaje",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal_sin_iva",
+              "displayName": "subtotal_sin_iva",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal_con_iva",
+              "displayName": "subtotal_con_iva",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1296,
+        96
+      ],
+      "id": "a06deea5-c27f-497c-9598-ce031d09e468",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wArTf1rSqK6q9J4q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "detalle_impuestos",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "id_factura",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        256
+      ],
+      "id": "c4616765-1442-473b-a693-a79517eabf4f",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM",
+          "mode": "list",
+          "cachedResultName": "Comprobantes Proveedores",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 807560808,
+          "mode": "list",
+          "cachedResultName": "Comprobantes_Impuestos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1WdGRdGJMc3LBgn2jl2UBq32WVDCkko-6QYLm2z-NOXM/edit#gid=807560808"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_factura": "={{ $json.id_factura }}",
+            "tipo_impuesto": "={{ $json.detalle_impuestos.tipo_impuesto }}",
+            "descripcion": "={{ $json.detalle_impuestos.descripcion }}",
+            "base_imponible": "={{ $json.detalle_impuestos.base_imponible }}",
+            "alicuota_porcentaje": "={{ $json.detalle_impuestos.alicuota_porcentaje }}",
+            "monto_impuesto": "={{ $json.detalle_impuestos.monto_impuesto }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id_factura",
+              "displayName": "id_factura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_impuesto",
+              "displayName": "tipo_impuesto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "descripcion",
+              "displayName": "descripcion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "base_imponible",
+              "displayName": "base_imponible",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "alicuota_porcentaje",
+              "displayName": "alicuota_porcentaje",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "monto_impuesto",
+              "displayName": "monto_impuesto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1296,
+        256
+      ],
+      "id": "f5275cae-0107-4c9f-b26e-f61d5a45da89",
+      "name": "Append row in sheet2",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wArTf1rSqK6q9J4q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "id_factura",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1632,
+        32
+      ],
+      "id": "e3cf0fc9-ef90-476b-b54c-5b6877fb713c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "id_factura",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1856,
+        48
+      ],
+      "id": "44a10a21-85b5-4dd6-bdc2-2e779c8e1237",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2016,
+        48
+      ],
+      "id": "b8b54ff5-2025-4138-8fac-ea85afe11cad",
+      "name": "Mark a message as read",
+      "webhookId": "4dba2cb0-bf1a-426a-a71a-9c269fc1cf5d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "j4xneXjuClKeUVfL",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": [
+          "Label_3212592184985126121"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2224,
+        48
+      ],
+      "id": "eb16203a-948b-4302-bf25-7241ab638e66",
+      "name": "Add label to message",
+      "webhookId": "9891cb6a-2a33-45d2-b20b-9051d780f4d8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "j4xneXjuClKeUVfL",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet2": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark a message as read": {
+      "main": [
+        [
+          {
+            "node": "Add label to message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fa76a8767153d35665339b17bcb62632e2230d867620512802919fb7ee842584"
+  }
+}
